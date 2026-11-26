@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Shawty — schema</title>
+</head>
+<body>
+  <h1>Shawty schema</h1>
+  <div itemscope itemtype="https://pagelove.org/Schema">
+    <meta itemprop="type" content="https://grin-veil-8450.onpagelove.com/schema/ShortLink">
+    <meta itemprop="name" content="ShortLink">
+    <meta itemprop="description" content="A short code that redirects to a long URL, owned by one signed-in user.">
+    <div itemprop="property" itemscope itemtype="https://pagelove.org/Property">
+      <meta itemprop="name" content="code">
+      <meta itemprop="type" content="https://schema.host/Text">
+      <meta itemprop="cardinality" content="1..1">
+      <meta itemprop="unique" content="true">
+    </div>
+    <div itemprop="property" itemscope itemtype="https://pagelove.org/Property">
+      <meta itemprop="name" content="url">
+      <meta itemprop="type" content="https://schema.host/Text">
+      <meta itemprop="cardinality" content="1..1">
+    </div>
+    <div itemprop="property" itemscope itemtype="https://pagelove.org/Property">
+      <meta itemprop="name" content="owner">
+      <meta itemprop="type" content="https://schema.host/Text">
+      <meta itemprop="cardinality" content="1..1">
+    </div>
+    <div itemprop="property" itemscope itemtype="https://pagelove.org/Property">
+      <meta itemprop="name" content="created">
+      <meta itemprop="type" content="https://schema.host/Text">
+      <meta itemprop="cardinality" content="1..1">
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Shawty — triggers</title>
+</head>
+<body>
+  <h1>Shawty triggers</h1>
+
+  <!-- JSON API: GET /api/me, GET|POST|DELETE /api/links.
+       Access is decided first by /system/authz.html; these actions then answer
+       directly (thrown HTTPResponse) and write to the private /data/links.html. -->
+  <div itemscope itemtype="https://pagelove.org/Trigger">
+    <meta itemprop="resource" content="/api/me">
+    <meta itemprop="resource" content="/api/links">
+    <div itemprop="action" itemscope itemtype="https://pagelove.org/JavaScript/Module">
+      <script type="module" itemprop="source">
+import ShortLink from "https://grin-veil-8450.onpagelove.com/schema/ShortLink" with { type: "https://pagelove.org/Schema" };
+
+const TYPE = "https://grin-veil-8450.onpagelove.com/schema/ShortLink";
+const DATA = "/data/links.html";
+const CODE_RE = /^[A-Za-z0-9_-]{3,32}$/;
+const MAX_URL = 32768;
+const ALPHABET = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+function reply(status, data) {
+  throw {
+    schema_url: "https://pagelove.org/HTTPResponse",
+    status,
+    body: JSON.stringify(data),
+    headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "private, no-store" },
+  };
+}
+
+function str(v) {
+  return typeof v === "string" ? v : (v == null ? "" : String(v));
+}
+
+function currentUser(ctx) {
+  const a = ctx.request.auth || {};
+  const c = a.claims || {};
+  const sub = str(a.sub || c.sub || a.username);
+  if (!sub) return null;
+  return { sub, name: str(a.name || c.name), email: str(a.email || c.email), picture: str(c.picture) };
+}
+
+function esc(s) {
+  return str(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function randomCode(length) {
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  let out = "";
+  for (const b of bytes) out += ALPHABET[b % ALPHABET.length];
+  return out;
+}
+
+function toJson(r) {
+  return { code: str(r.code), url: str(r.url), created: str(r.created) };
+}
+
+function validUrl(raw, host) {
+  const url = str(raw).trim();
+  if (!url || url.length > MAX_URL) return null;
+  const m = /^(https?):\/\/([^\/?#\s]+)([^\s]*)$/i.exec(url);
+  if (!m) return null;
+  const target = m[2].toLowerCase().replace(/:\d+$/, "");
+  if (host && target === str(host).toLowerCase() && /^\/s\//.test(m[3])) return null; // no loops
+  return url;
+}
+
+function plain(v) {
+  if (v instanceof Map) return Object.fromEntries(v);
+  return v && typeof v === "object" && !Array.isArray(v) ? v : null;
+}
+
+function first(v) {
+  if (Array.isArray(v)) return first(v[0]);
+  if (v && typeof v === "object" && "value" in v) return first(v.value);
+  return str(v);
+}
+
+function parseForm(raw) {
+  const out = {};
+  for (const pair of raw.split("&")) {
+    if (!pair) continue;
+    const i = pair.indexOf("=");
+    const k = decodeURIComponent((i < 0 ? pair : pair.slice(0, i)).replace(/\+/g, " "));
+    const v = i < 0 ? "" : decodeURIComponent(pair.slice(i + 1).replace(/\+/g, " "));
+    out[k] = v;
+  }
+  return out;
+}
+
+// The request body can arrive parsed (object/Map) or as text; accept JSON or form data.
+function readBody(ctx) {
+  const parsed = plain(ctx.request.body);
+  const raw = typeof ctx.request.rawBody === "string" ? ctx.request.rawBody
+    : (typeof ctx.request.body === "string" ? ctx.request.body : "");
+  let fields = parsed && ("url" in parsed || "code" in parsed) ? parsed : null;
+  if (!fields && raw) {
+    try {
+      fields = plain(JSON.parse(raw));
+    } catch (e) {
+      try { fields = parseForm(raw); } catch (e2) { fields = null; }
+    }
+  }
+  fields = fields || {};
+  return { url: first(fields.url), code: first(fields.code) };
+}
+
+function itemHtml(link) {
+  return '<li id="l-' + esc(link.code) + '" itemscope itemtype="' + TYPE + '">' +
+    '<meta itemprop="code" content="' + esc(link.code) + '">' +
+    '<meta itemprop="url" content="' + esc(link.url) + '">' +
+    '<meta itemprop="owner" content="' + esc(link.owner) + '">' +
+    '<meta itemprop="created" content="' + esc(link.created) + '">' +
+    '</li>';
+}
+
+export default function (ctx) {
+  const method = ctx.request.method;
+  const path = ctx.request.path;
+  const user = currentUser(ctx);
+
+  if (path === "/api/me") {
+    if (method !== "GET" && method !== "HEAD") reply(405, { error: "Method not allowed" });
+    if (!user) reply(200, { signedIn: false });
+    reply(200, { signedIn: true, user: { name: user.name, email: user.email, picture: user.picture } });
+  }
+
+  if (!user) reply(401, { error: "Please sign in first." });
+
+  if (method === "GET" || method === "HEAD") {
+    const links = ShortLink.search({ owner: user.sub }).map(toJson);
+    links.sort((a, b) => (a.created < b.created ? 1 : a.created > b.created ? -1 : 0));
+    reply(200, { links });
+  }
+
+  if (method === "POST") {
+    const body = readBody(ctx);
+    const url = validUrl(body.url, ctx.request.host);
+    if (!url) reply(400, { error: "Enter a valid http(s) URL (up to 32,768 characters)." });
+
+    const custom = str(body.code).trim();
+    if (custom && !CODE_RE.test(custom)) {
+      reply(400, { error: "Custom codes are 3–32 letters, numbers, dashes or underscores." });
+    }
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const code = custom || randomCode(6 + Math.floor(attempt / 2));
+      if (ShortLink.search({ code }).length > 0) {
+        if (custom) reply(409, { error: "That code is already taken. Try another." });
+        continue;
+      }
+      const link = { code, url, owner: user.sub, created: new Date().toISOString() };
+      try {
+        Pagelove.POST(itemHtml(link), DATA, "#links", "prepend");
+      } catch (e) {
+        // A concurrent save may have taken the code (it is unique on the host).
+        if (custom) reply(409, { error: "That code is already taken. Try another." });
+        continue;
+      }
+      reply(201, { link: toJson(link) });
+    }
+    reply(503, { error: "Couldn't find a free short code. Please try again." });
+  }
+
+  if (method === "DELETE") {
+    const q = ctx.request.query || {};
+    const code = str(q.code);
+    if (!CODE_RE.test(code)) reply(400, { error: "Missing or invalid code." });
+    if (ShortLink.search({ code, owner: user.sub }).length === 0) {
+      reply(404, { error: "Link not found." });
+    }
+    Pagelove.DELETE(DATA, "#l-" + code);
+    reply(200, { ok: true });
+  }
+
+  reply(405, { error: "Method not allowed" });
+}
+      </script>
+    </div>
+  </div>
+
+  <!-- Public redirect: GET /s/{code} → 302 to the stored URL. -->
+  <div itemscope itemtype="https://pagelove.org/Trigger">
+    <meta itemprop="resource" content="/s/*">
+    <meta itemprop="method" content="GET">
+    <div itemprop="action" itemscope itemtype="https://pagelove.org/JavaScript/Module">
+      <script type="module" itemprop="source">
+import ShortLink from "https://grin-veil-8450.onpagelove.com/schema/ShortLink" with { type: "https://pagelove.org/Schema" };
+
+function notFound() {
+  throw {
+    schema_url: "https://pagelove.org/HTTPResponse",
+    status: 404,
+    body: '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Link not found · Shawty</title>' +
+      '<style>body{font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#fafafa;color:#171717}main{text-align:center;padding:16px}a{color:inherit}</style></head>' +
+      '<body><main><h1>Link not found</h1><p>This short link doesn’t exist or was deleted.</p><p><a href="/">Go to Shawty</a></p></main></body></html>',
+    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-store" },
+  };
+}
+
+export default function (ctx) {
+  const code = String(ctx.request.path || "").replace(/^\/s\//, "");
+  if (!/^[A-Za-z0-9_-]{3,32}$/.test(code)) notFound();
+  const hits = ShortLink.search({ code });
+  if (hits.length === 0) notFound();
+  const url = String(hits[0].url || "");
+  if (!/^https?:\/\//i.test(url)) notFound();
+  throw {
+    schema_url: "https://pagelove.org/HTTPResponse",
+    status: 302,
+    body: "",
+    headers: { "Location": url, "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" },
+  };
+}
+      </script>
+    </div>
+  </div>
+</body>
+</html>

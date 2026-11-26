@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Shawty — authorization rules</title>
+</head>
+<body>
+  <h1>Shawty authorization rules</h1>
+  <p>The host's default GET mode is <code>deny</code>: anything not opened here
+     (including <code>/data/*</code> and <code>/system/*</code>) is private.
+     All link data is written by server triggers, never directly by browsers.</p>
+
+  <!-- Public: the app shell, its assets, the session probe, and short-link redirects. -->
+  <div itemscope itemtype="https://pagelove.org/AuthorizationRule">
+    <meta itemprop="actor" content="*">
+    <meta itemprop="resource" content="/">
+    <meta itemprop="resource" content="/index.html">
+    <meta itemprop="resource" content="/favicon.svg">
+    <meta itemprop="resource" content="/assets/*">
+    <meta itemprop="resource" content="/s/*">
+    <meta itemprop="resource" content="/api/me">
+    <meta itemprop="method" content="GET">
+    <meta itemprop="action" content="Allow">
+  </div>
+
+  <!-- Signed-in users only: list, create and delete their own links. -->
+  <div itemscope itemtype="https://pagelove.org/AuthorizationRule">
+    <meta itemprop="actor" content="users">
+    <meta itemprop="resource" content="/api/links">
+    <meta itemprop="method" content="GET">
+    <meta itemprop="method" content="POST">
+    <meta itemprop="method" content="DELETE">
+    <meta itemprop="action" content="Allow">
+  </div>
+</body>
+</html>

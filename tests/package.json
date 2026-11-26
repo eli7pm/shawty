@@ -1,0 +1,15 @@
+{
+  "name": "shawty-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "node --test \"unit/**/*.test.mjs\"",
+    "test:e2e": "cucumber-js",
+    "login": "playwright open --save-storage"
+  },
+  "devDependencies": {
+    "@cucumber/cucumber": "^13.3.0",
+    "linkedom": "^0.18.15"
+  }
+}
